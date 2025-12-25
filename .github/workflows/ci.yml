@@ -1,0 +1,16 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP lint
+        run: |
+          set -e
+          for f in $(git ls-files '*.php'); do
+            php -l "$f" >/dev/null
+          done
+          echo "PHP lint OK"
