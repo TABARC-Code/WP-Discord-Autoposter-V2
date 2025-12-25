@@ -38,4 +38,4 @@ Result: one message in Discord.
 ## If it posts twice
 It shouldn’t. The plugin stores a fingerprint to stop obvious duplicates.
 If you have weird editorial workflows, you can still create edge cases.
-That’s not mysticism. That’s WordPress.
+
