@@ -1,6 +1,6 @@
 # Idiot’s guide
 
-Assumes you’re tired. Not stupid.
+Assumes you’re leanrning. Not stupid.
 
 ## 1) Make the webhook
 Discord → Channel → Edit → Integrations → Webhooks → New Webhook → Copy URL.
