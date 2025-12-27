@@ -41,15 +41,15 @@ That’s it. No background jobs, no cron queues, no retry storms.
 
 This section exists to prevent future arguments.
 
-- ❌ No posting on post updates  
+-  No posting on post updates  
   Publish means publish. Editing later is not an event.
-- ❌ No multi-channel routing  
+-  No multi-channel routing  
   If you want that, filter the payload and build it yourself.
-- ❌ No dashboards, logs UI, charts, analytics, or “AI summaries”
-- ❌ No retries, queues, or background workers  
+-  No dashboards, logs UI, charts, analytics, or “AI summaries”
+-  No retries, queues, or background workers  
   If Discord is down, the request fails and moves on.
 
-These are not omissions. They are design decisions.
+These are not omissions. Thus is a design decision.
 
 --------
 
@@ -95,7 +95,7 @@ That’s the global setup done.
 
 ## Creating a Discord webhook (quick version)
 
-Discord → Channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL.
+Discord - Channel - Edit Channel - Integrations - Webhooks → New Webhook → Copy URL.
 
 Treat the URL like a password.
 Because functionally, it is.
