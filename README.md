@@ -45,7 +45,7 @@ This section exists to prevent future arguments.
   Publish means publish. Editing later is not an event.
 -  No multi-channel routing  
   If you want that, filter the payload and build it yourself.
--  No dashboards, logs UI, charts, analytics, or “AI summaries”
+-  No dashboards, logs UI, charts, analytics, or auto-written summaries
 -  No retries, queues, or background workers  
   If Discord is down, the request fails and moves on.
 
