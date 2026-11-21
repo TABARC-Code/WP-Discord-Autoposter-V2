@@ -291,7 +291,7 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
                 return;
             }
 
-            if ( ! isset( $_POST['wpda_discord_meta_nonce'] ) || ! wp_verify_nonce( (string) $_POST['wpda_discord_meta_nonce'], 'wpda_discord_meta' ) ) {
+            if ( ! isset( $_POST['wpda_discord_meta_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( (string) $_POST['wpda_discord_meta_nonce'] ) ), 'wpda_discord_meta' ) ) {
                 return;
             }
 
