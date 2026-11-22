@@ -6,6 +6,8 @@
  * Author:      TABARC-Code
  * Plugin URI:  https://github.com/TABARC-Code/
  * Text Domain: wp-discord-announcer
+ * Requires at least: 6.0
+ * Requires PHP: 8.1
  *
  * Maintainer notes (TABARC-Code):
  * - This is deliberately boring. If you want a "Discord marketing suite", go buy one.
@@ -119,37 +121,81 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
             );
         }
 
+        /**
+         * Checks that a URL is an https Discord webhook URL.
+         * The host must be discord.com or discordapp.com (or a subdomain of them).
+         */
+        private function is_valid_webhook_url( string $url ) : bool {
+            $parsed = wp_parse_url( $url );
+            if ( ! is_array( $parsed ) ) {
+                return false;
+            }
+
+            $scheme = isset( $parsed['scheme'] ) ? strtolower( (string) $parsed['scheme'] ) : '';
+            $host   = isset( $parsed['host'] ) ? strtolower( (string) $parsed['host'] ) : '';
+            $path   = isset( $parsed['path'] ) ? (string) $parsed['path'] : '';
+
+            if ( $scheme !== 'https' || $host === '' || isset( $parsed['user'] ) || isset( $parsed['pass'] ) || isset( $parsed['port'] ) ) {
+                return false;
+            }
+
+            $host_ok = false;
+            foreach ( array( 'discord.com', 'discordapp.com' ) as $allowed ) {
+                if ( $host === $allowed || substr( $host, -( strlen( $allowed ) + 1 ) ) === '.' . $allowed ) {
+                    $host_ok = true;
+                    break;
+                }
+            }
+
+            return $host_ok && strpos( $path, '/api/webhooks/' ) === 0;
+        }
+
+        /**
+         * Masks a stored webhook URL so the secret token is never printed in full.
+         */
+        private function mask_webhook_url( string $url ) : string {
+            if ( $url === '' ) {
+                return '';
+            }
+            $parsed = wp_parse_url( $url );
+            $host   = is_array( $parsed ) && isset( $parsed['host'] ) ? (string) $parsed['host'] : 'discord.com';
+            return 'https://' . $host . '/api/webhooks/********';
+        }
+
         public function sanitize_webhook_url( $value ) {
-            $value = trim( (string) $value );
+            $existing = (string) get_option( self::OPT_WEBHOOK, '' );
+            $value    = is_scalar( $value ) ? trim( (string) $value ) : '';
 
             if ( $value === '' ) {
                 return '';
             }
 
+            // The settings field shows a masked value. Unchanged means keep the stored URL.
+            if ( $existing !== '' && $value === $this->mask_webhook_url( $existing ) ) {
+                return $existing;
+            }
+
             $value = esc_url_raw( $value );
             if ( ! $value ) {
                 add_settings_error( self::OPT_WEBHOOK, 'wpda_invalid_url', __( 'The Discord webhook URL is invalid.', 'wp-discord-announcer' ) );
-                return '';
+                return $existing;
             }
 
-            $parsed = wp_parse_url( $value );
-            $host   = isset( $parsed['host'] ) ? (string) $parsed['host'] : '';
-
-            if ( $host === '' || ( stripos( $host, 'discord.com' ) === false && stripos( $host, 'discordapp.com' ) === false ) ) {
+            if ( ! $this->is_valid_webhook_url( $value ) ) {
                 add_settings_error( self::OPT_WEBHOOK, 'wpda_not_discord', __( 'The URL does not appear to be a valid Discord webhook URL.', 'wp-discord-announcer' ) );
-                return '';
+                return $existing;
             }
 
             return $value;
         }
 
         public function sanitize_template( $value ) {
-            $value = (string) $value;
+            $value = is_scalar( $value ) ? (string) $value : '';
             $value = wp_strip_all_tags( $value, false );
             $value = trim( $value );
 
-            if ( strlen( $value ) > 1000 ) {
-                $value = substr( $value, 0, 1000 );
+            if ( mb_strlen( $value, 'UTF-8' ) > 1000 ) {
+                $value = mb_substr( $value, 0, 1000, 'UTF-8' );
             }
 
             return $value;
@@ -160,10 +206,11 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
         }
 
         public function render_webhook_url_field() {
-            $value = (string) get_option( self::OPT_WEBHOOK, '' );
+            $value = $this->mask_webhook_url( (string) get_option( self::OPT_WEBHOOK, '' ) );
             ?>
             <input
-                type="url"
+                type="text"
+                inputmode="url"
                 name="<?php echo esc_attr( self::OPT_WEBHOOK ); ?>"
                 id="<?php echo esc_attr( self::OPT_WEBHOOK ); ?>"
                 value="<?php echo esc_attr( $value ); ?>"
@@ -172,7 +219,7 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
                 autocomplete="off"
             />
             <p class="description">
-                <?php esc_html_e( 'Create a webhook in your Discord channel settings and paste the URL here. Keep it private.', 'wp-discord-announcer' ); ?>
+                <?php esc_html_e( 'Create a webhook in your Discord channel settings and paste the URL here. Keep it private. Once saved it is shown masked; leave it as it is to keep the stored URL, or clear the field to remove it.', 'wp-discord-announcer' ); ?>
             </p>
             <?php
         }
@@ -325,7 +372,7 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
 
         public function handle_post_status_transition( $new_status, $old_status, $post ) {
             $webhook_url = (string) get_option( self::OPT_WEBHOOK, '' );
-            if ( $webhook_url === '' ) {
+            if ( $webhook_url === '' || ! $this->is_valid_webhook_url( $webhook_url ) ) {
                 return;
             }
 
@@ -360,7 +407,16 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
                 return;
             }
 
+            // Short lock so a doubled hook in the same moment cannot announce twice.
+            $lock_key = 'wpda_lock_' . (int) $post->ID;
+            if ( get_transient( $lock_key ) ) {
+                return;
+            }
+            set_transient( $lock_key, '1', 60 );
+
             $ok = $this->send_discord_notification_for_post( $post, $webhook_url );
+
+            delete_transient( $lock_key );
 
             if ( $ok ) {
                 update_post_meta( $post->ID, self::META_ANNOUNCED_FPR, $fingerprint );
@@ -389,13 +445,13 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
                 return false;
             }
 
-            $title       = (string) get_the_title( $post_id );
+            $title       = html_entity_decode( (string) get_the_title( $post_id ), ENT_QUOTES, 'UTF-8' );
             $author_id   = (int) $post->post_author;
             $author_name = $author_id ? (string) get_the_author_meta( 'display_name', $author_id ) : '';
             $site_name   = (string) get_bloginfo( 'name' );
 
             $raw_excerpt = (string) get_the_excerpt( $post_id );
-            $excerpt     = wp_trim_words( wp_strip_all_tags( $raw_excerpt ), 50, '…' );
+            $excerpt     = html_entity_decode( wp_trim_words( wp_strip_all_tags( $raw_excerpt ), 50, '…' ), ENT_QUOTES, 'UTF-8' );
 
             $post_date = (string) get_post_time(
                 get_option( 'date_format' ) . ' ' . get_option( 'time_format' ),
@@ -453,7 +509,13 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
                 'headers' => array( 'Content-Type' => 'application/json' ),
                 'body'    => wp_json_encode( $payload ),
                 'timeout' => 10,
+                'redirection' => 0,
             );
+
+            if ( ! is_string( $args['body'] ) ) {
+                $this->log_error( sprintf( 'Could not encode payload for post %d.', $post_id ) );
+                return false;
+            }
 
             $response = wp_remote_post( $webhook_url, $args );
 
@@ -486,10 +548,10 @@ if ( ! class_exists( 'WP_Discord_Announcer' ) ) {
             if ( $max <= 0 ) {
                 return '';
             }
-            if ( strlen( $text ) <= $max ) {
+            if ( mb_strlen( $text, 'UTF-8' ) <= $max ) {
                 return $text;
             }
-            $cut = substr( $text, 0, max( 0, $max - 1 ) );
+            $cut = mb_substr( $text, 0, max( 0, $max - 1 ), 'UTF-8' );
             return $cut . '…';
         }
 
